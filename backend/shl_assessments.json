@@ -1,0 +1,30 @@
+[
+  {
+    "name": "SHL Talent Intelligence Solutions",
+    "url": "https://www.shl.com/solutions/",
+    "description": "Whatever role you are hiring for, you can maximize your people’s potential with SHL's Talent Acquisition and Talent Management solutions.",
+    "test_type": "P",
+    "category": "30%",
+    "skills": [
+      "leadership",
+      "management",
+      "coding"
+    ],
+    "duration": "N/A",
+    "level": "Senior"
+  },
+  {
+    "name": "Account Manager Solution",
+    "url": "https://www.shl.com/products/product-catalog/view/account-manager-solution/",
+    "description": "Account Manager Solution : The Account Manager solution is an assessment used for job candidates applying to mid-level leadership positions that tend to manage the day-to-day operations…",
+    "test_type": "P",
+    "category": "General",
+    "skills": [
+      "leadership",
+      "management",
+      "coding"
+    ],
+    "duration": "N/A",
+    "level": "Senior"
+  }
+]

@@ -1,0 +1,122 @@
+[
+  {
+    "name": "SHL Cognitive Assessments",
+    "url": "https://www.shl.com/products/assessments/cognitive-assessments/",
+    "description": "Measure candidates' potential and ability to learn, adapt, and succeed in any role with SHL's cognitive ability tests and assessments.",
+    "test_type": "P",
+    "category": "Cognitive Assessments",
+    "skills": [
+      "leadership",
+      "problem-solving",
+      "planning",
+      "numerical reasoning",
+      "customer service",
+      "sales",
+      "management"
+    ],
+    "duration": "N/A",
+    "level": "Senior",
+    "languages": [
+      "english",
+      "chinese",
+      "japanese"
+    ],
+    "format": "Online"
+  },
+  {
+    "name": "SHL Personality Assessments",
+    "url": "https://www.shl.com/products/assessments/personality-assessment/",
+    "description": "Improve your hiring process with science-backed personality assessments that reveal each candidate’s preferences, motivations, and remote-work capability.",
+    "test_type": "P",
+    "category": "Personality Assessment",
+    "skills": [
+      "leadership",
+      "planning",
+      "sales",
+      "management",
+      "technical",
+      "coding",
+      "innovation"
+    ],
+    "duration": "N/A",
+    "level": "Senior",
+    "languages": [
+      "english",
+      "chinese",
+      "japanese"
+    ],
+    "format": "Online"
+  },
+  {
+    "name": "SHL Motivational Questionnaire",
+    "url": "https://www.shl.com/products/assessments/personality-assessment/shl-motivation-questionnaire-mq/",
+    "description": "Build an engaged, high-performing workforce using our motivation questionnaire (MQ) by matching individual employee motivation to team and organizational goals.",
+    "test_type": "P",
+    "category": "SHL Motivation Questionnaire (MQ)",
+    "skills": [
+      "leadership",
+      "planning",
+      "sales",
+      "management",
+      "technical",
+      "coding",
+      "innovation"
+    ],
+    "duration": "20 minutes",
+    "level": "Senior",
+    "languages": [
+      "english",
+      "chinese",
+      "japanese"
+    ],
+    "format": "Online"
+  },
+  {
+    "name": "SHL Occupational Personality Questionnaire OPQ",
+    "url": "https://www.shl.com/products/assessments/personality-assessment/shl-occupational-personality-questionnaire-opq/",
+    "description": "Our occupational personality questionnaire helps you to get accurate, bias-free assessments by matching individual working preferences to business requirements.",
+    "test_type": "P",
+    "category": "SHL Occupational Personality Questionnaire (OPQ)",
+    "skills": [
+      "leadership",
+      "planning",
+      "sales",
+      "management",
+      "technical",
+      "coding",
+      "innovation"
+    ],
+    "duration": "20 minutes",
+    "level": "Senior",
+    "languages": [
+      "english",
+      "chinese",
+      "japanese"
+    ],
+    "format": "Online"
+  },
+  {
+    "name": "SHL Personality and Ability Assessment Course",
+    "url": "https://www.shl.com/solutions/services/training-services/personality-and-ability-assessment-training/",
+    "description": "Upon successful completion of this training, you will be certified to administer, interpret, and provide feedback on ability tests and personality assessments.",
+    "test_type": "P",
+    "category": "Personality and Ability Assessment Training",
+    "skills": [
+      "leadership",
+      "planning",
+      "sales",
+      "management",
+      "technical",
+      "coding",
+      "innovation"
+    ],
+    "duration": "N/A",
+    "level": "Senior",
+    "languages": [
+      "english",
+      "chinese",
+      "japanese"
+    ],
+    "format": "Online"
+  }
+]
