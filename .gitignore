@@ -12,3 +12,15 @@ backend/data/*.json
 
 # ChromaDB generated files
 chroma_db/
+
+# Data files
+data/
+*.csv
+*.xlsx
+
+# Evaluation outputs
+evaluation_metrics.json
+
+# OS
+.DS_Store
+Thumbs.db

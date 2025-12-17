@@ -39,11 +39,12 @@ export default function SHLRecommendationSystem() {
 
       const data = await response.json();
       
-      if (data.recommendations && data.recommendations.length > 0) {
+      if (data.recommendations && Array.isArray(data.recommendations)) {
         setResults(data.recommendations);
       } else {
-        setError('No recommendations found');
+        setError("No recommendations found");
       }
+      
     } catch (err) {
       setError(`Failed to fetch recommendations: ${err.message}`);
       console.error('Error:', err);
