@@ -1,177 +1,111 @@
 """
 Data Ingestion Script - Load SHL assessments into ChromaDB
 """
+
 import json
 import chromadb
 from chromadb.utils import embedding_functions
 import os
-from typing import List, Dict
+from typing import Dict
+
+# ---------- PATH SETUP ----------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(BASE_DIR, "data", "shl_assessments.json")
+CHROMA_PATH = os.path.join(BASE_DIR, "..", "chroma_db")
+
 
 def create_document_text(assessment: Dict) -> str:
-    """Create a rich text representation of the assessment for embedding."""
     parts = []
-    
-    # Name (most important)
-    if assessment.get('name'):
+
+    if assessment.get("name"):
         parts.append(f"Assessment: {assessment['name']}")
-    
-    # Description
-    if assessment.get('description'):
+
+    if assessment.get("description"):
         parts.append(f"Description: {assessment['description']}")
-    
-    # Test type expansion
+
     test_type_map = {
-        'K': 'Knowledge and Skills Assessment',
-        'P': 'Personality and Behavior Assessment',
-        'C': 'Cognitive Ability Assessment',
-        'S': 'Situational Judgment Test',
-        'O': 'General Assessment'
+        "K": "Knowledge and Skills Assessment",
+        "P": "Personality and Behavior Assessment",
+        "C": "Cognitive Ability Assessment",
+        "S": "Situational Judgment Test",
+        "O": "General Assessment",
     }
-    test_type = assessment.get('test_type', 'O')
-    parts.append(f"Type: {test_type_map.get(test_type, 'Assessment')}")
-    
-    # Category
-    if assessment.get('category'):
+    test_type = assessment.get("test_type", "O")
+    parts.append(f"Type: {test_type_map.get(test_type)}")
+
+    if assessment.get("category"):
         parts.append(f"Category: {assessment['category']}")
-    
-    # Skills
-    if assessment.get('skills'):
+
+    if assessment.get("skills"):
         parts.append(f"Skills: {', '.join(assessment['skills'])}")
-    
-    # Level
-    if assessment.get('level'):
+
+    if assessment.get("level"):
         parts.append(f"Level: {assessment['level']}")
-    
-    # Duration
-    if assessment.get('duration') and assessment['duration'] != 'N/A':
+
+    if assessment.get("duration") and assessment["duration"] != "N/A":
         parts.append(f"Duration: {assessment['duration']}")
-    
+
     return " | ".join(parts)
 
-def ingest_data(json_file: str = 'shl_assessments.json', 
-                gemini_api_key: str = None):
-    """Ingest assessment data into ChromaDB."""
-    
-    # Load data
-    print(f"Loading data from {json_file}...")
-    try:
-        with open(json_file, 'r', encoding='utf-8') as f:
-            assessments = json.load(f)
-        print(f"Loaded {len(assessments)} assessments")
-    except FileNotFoundError:
-        print(f"Error: {json_file} not found. Please run scraper.py first.")
+
+def ingest_data():
+    print(f"Loading data from {DATA_PATH}...")
+
+    if not os.path.exists(DATA_PATH):
+        print("❌ shl_assessments.json not found. Run scraper first.")
         return
-    
-    if len(assessments) < 377:
-        print(f"Warning: Only {len(assessments)} assessments found. Expected at least 377.")
-    
-    # Initialize ChromaDB
-    print("Initializing ChromaDB...")
-    chroma_client = chromadb.PersistentClient(path="./chroma_db")
-    
-    # Get API key
-    if not gemini_api_key:
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-    
-    if not gemini_api_key:
-        print("Error: GEMINI_API_KEY not provided")
-        return
-    
-    # Initialize embedding function
-    embedding_function = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
-        api_key=gemini_api_key
+
+    with open(DATA_PATH, "r", encoding="utf-8") as f:
+        assessments = json.load(f)
+
+    print(f"✅ Loaded {len(assessments)} assessments")
+
+    # ---------- LOCAL EMBEDDINGS ----------
+    embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+        model_name="all-MiniLM-L6-v2"
     )
-    
-    # Delete existing collection if it exists
+
+    chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
+
     try:
-        chroma_client.delete_collection(name="shl_assessments")
-        print("Deleted existing collection")
+        chroma_client.delete_collection("shl_assessments")
     except:
         pass
-    
-    # Create new collection
-    print("Creating new collection...")
+
     collection = chroma_client.create_collection(
         name="shl_assessments",
         embedding_function=embedding_function,
-        metadata={"hnsw:space": "cosine"}
+        metadata={"hnsw:space": "cosine"},
     )
-    
-    # Prepare data for ingestion
-    print("Preparing documents for embedding...")
-    ids = []
-    documents = []
-    metadatas = []
-    
-    for idx, assessment in enumerate(assessments):
-        # Create unique ID
-        assessment_id = f"assessment_{idx}"
-        
-        # Create document text for embedding
-        doc_text = create_document_text(assessment)
-        
-        # Prepare metadata (must be simple types)
-        metadata = {
-            'name': assessment.get('name', 'Unknown'),
-            'url': assessment.get('url', ''),
-            'test_type': assessment.get('test_type', 'O'),
-            'category': assessment.get('category', 'General'),
-            'level': assessment.get('level', 'All Levels'),
-            'description': assessment.get('description', '')[:500]  # Truncate long descriptions
-        }
-        
-        # Add to lists
-        ids.append(assessment_id)
-        documents.append(doc_text)
-        metadatas.append(metadata)
-    
-    # Batch ingest (ChromaDB recommends batches of ~100)
-    print("Ingesting data into ChromaDB...")
-    batch_size = 100
-    for i in range(0, len(ids), batch_size):
-        batch_end = min(i + batch_size, len(ids))
-        print(f"Ingesting batch {i//batch_size + 1} ({i+1}-{batch_end} of {len(ids)})")
-        
-        collection.add(
-            ids=ids[i:batch_end],
-            documents=documents[i:batch_end],
-            metadatas=metadatas[i:batch_end]
-        )
-    
-    # Verify ingestion
-    count = collection.count()
-    print(f"\n{'='*50}")
-    print(f"Ingestion Complete!")
-    print(f"Total documents in collection: {count}")
-    print(f"{'='*50}\n")
-    
-    # Test query
-    print("Testing retrieval with sample query...")
-    results = collection.query(
-        query_texts=["Java developer with good communication skills"],
-        n_results=3
-    )
-    
-    print("\nTop 3 results for 'Java developer with good communication skills':")
-    for i, doc_id in enumerate(results['ids'][0]):
-        metadata = results['metadatas'][0][i]
-        distance = results['distances'][0][i]
-        print(f"{i+1}. {metadata['name']} (score: {1-distance:.3f})")
-        print(f"   URL: {metadata['url']}")
-        print(f"   Type: {metadata['test_type']}\n")
 
-def main():
-    """Main execution."""
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Ingest SHL assessment data into ChromaDB')
-    parser.add_argument('--json-file', default='shl_assessments.json',
-                       help='Path to JSON file with scraped data')
-    parser.add_argument('--api-key', help='Gemini API key (or set GEMINI_API_KEY env var)')
-    
-    args = parser.parse_args()
-    
-    ingest_data(args.json_file, args.api_key)
+    ids, documents, metadatas = [], [], []
+
+    for idx, assessment in enumerate(assessments):
+        ids.append(f"assessment_{idx}")
+        documents.append(create_document_text(assessment))
+        metadatas.append({
+            "name": assessment.get("name", "Unknown"),
+            "url": assessment.get("url", ""),
+            "test_type": assessment.get("test_type", "O"),
+            "category": assessment.get("category", "General"),
+            "level": assessment.get("level", "All Levels"),
+        })
+
+    print("🚀 Ingesting into ChromaDB...")
+    collection.add(ids=ids, documents=documents, metadatas=metadatas)
+
+    print(f"✅ Ingestion complete. Total docs: {collection.count()}")
+
+    print("\n🔎 Test query:")
+    results = collection.query(
+        query_texts=["Java developer with communication skills"],
+        n_results=3,
+    )
+
+    for i, meta in enumerate(results["metadatas"][0]):
+        print(f"{i+1}. {meta['name']}")
+
+
 
 if __name__ == "__main__":
-    main()
+    ingest_data()

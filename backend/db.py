@@ -1,17 +1,32 @@
 import chromadb
 from chromadb.utils import embedding_functions
+from dotenv import load_dotenv
 
-client = chromadb.PersistentClient(path="./chroma_db")
+load_dotenv()
+
 ef = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
-    api_key="your_key"
+    model_name="models/embedding-001"
 )
 
-collection = client.get_collection("shl_assessments", embedding_function=ef)
+client = chromadb.Client(
+    settings=chromadb.Settings(
+        persist_directory="chroma_db"
+    )
+)
 
-# Test query
+collection = client.get_or_create_collection(
+    name="shl_assessments",
+    embedding_function=ef
+)
+
+collection.add(
+    documents=["SHL Cognitive Ability Test for Graduates"],
+    ids=["1"]
+)
+
 results = collection.query(
-    query_texts=["Java developer"],
-    n_results=5
+    query_texts=["cognitive ability test"],
+    n_results=1
 )
 
 print(results)
