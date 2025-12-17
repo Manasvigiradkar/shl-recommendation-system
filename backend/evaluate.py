@@ -1,126 +1,55 @@
 """
-Evaluation Script - Calculate Recall@K, Precision@K, MAP
+SHL Recommendation System
+Evaluation & Submission Script (FINAL)
+
+✔ Constraint-based evaluation
+✔ Prediction CSV generation
+✔ Robust CSV encoding handling
+✔ Automatic query column detection
+✔ No ground-truth dependency
 """
 
 import pandas as pd
-import json
 import requests
-from typing import List, Dict
+import time
 import numpy as np
+from typing import List
 
+
+# ================== UTILITY ==================
+
+def read_csv_safe(path: str) -> pd.DataFrame:
+    """Read CSV with encoding fallback."""
+    try:
+        return pd.read_csv(path, encoding="utf-8")
+    except UnicodeDecodeError:
+        try:
+            return pd.read_csv(path, encoding="latin1")
+        except UnicodeDecodeError:
+            return pd.read_csv(path, encoding="ISO-8859-1")
+
+
+def detect_query_column(df: pd.DataFrame) -> str:
+    """
+    Detect query column name automatically.
+    Supports: query, csvquery, Query
+    """
+    normalized_cols = {c.lower().strip(): c for c in df.columns}
+
+    for candidate in ["query", "csvquery", "question"]:
+        if candidate in normalized_cols:
+            return normalized_cols[candidate]
+
+    raise ValueError(
+        f"Query column not found. Available columns: {list(df.columns)}"
+    )
+
+
+# ================== EVALUATOR ==================
 
 class RecommendationEvaluator:
     def __init__(self, api_url: str = "http://localhost:8000"):
         self.api_url = api_url
-
-    # ------------------ METRICS ------------------
-
-    def recall_at_k(self, predicted: List[str], relevant: List[str], k: int = 10) -> float:
-        if not relevant:
-            return 0.0
-        top_k = predicted[:k]
-        return len(set(top_k) & set(relevant)) / len(relevant)
-
-    def precision_at_k(self, predicted: List[str], relevant: List[str], k: int = 10) -> float:
-        if not predicted:
-            return 0.0
-        top_k = predicted[:k]
-        return len(set(top_k) & set(relevant)) / len(top_k)
-
-    def mean_recall_at_k(self, results: List[Dict], k: int = 10) -> float:
-        recalls = [
-            self.recall_at_k(r["predicted"], r["relevant"], k)
-            for r in results
-        ]
-        return float(np.mean(recalls)) if recalls else 0.0
-
-    def mean_average_precision(self, results: List[Dict]) -> float:
-        aps = []
-
-        for r in results:
-            relevant = set(r["relevant"])
-            if not relevant:
-                continue
-
-            score = 0.0
-            hits = 0
-
-            for i, pred in enumerate(r["predicted"], start=1):
-                if pred in relevant:
-                    hits += 1
-                    score += hits / i
-
-            aps.append(score / len(relevant) if relevant else 0.0)
-
-        return float(np.mean(aps)) if aps else 0.0
-
-    # ------------------ EVALUATION ------------------
-
-    def evaluate_from_csv(self, train_csv: str, k: int = 10) -> Dict:
-        print(f"Loading training data from {train_csv}...")
-
-        # ✅ Robust CSV loading
-        try:
-            df = pd.read_csv(train_csv, encoding="utf-8")
-        except UnicodeDecodeError:
-            df = pd.read_csv(train_csv, encoding="latin1")
-
-        df.columns = df.columns.str.strip()
-
-        # ✅ Handle column name mismatch
-        query_col = "query" if "query" in df.columns else "csvquery"
-
-        if "Assessment_url" not in df.columns:
-            raise ValueError("CSV must contain 'Assessment_url' column")
-
-        # Group relevant URLs per query
-        query_groups = (
-            df.groupby(query_col)["Assessment_url"]
-            .apply(list)
-            .to_dict()
-        )
-
-        print(f"Found {len(query_groups)} unique queries")
-
-        results = []
-
-        for idx, (query, relevant_urls) in enumerate(query_groups.items(), 1):
-            print(f"\nEvaluating {idx}/{len(query_groups)} → {query[:60]}")
-
-            predicted_urls = self._get_predictions(query)
-
-            result = {
-                "query": query,
-                "relevant": relevant_urls,
-                "predicted": predicted_urls,
-                "num_relevant": len(relevant_urls),
-                "num_predicted": len(predicted_urls),
-            }
-            results.append(result)
-
-            r = self.recall_at_k(predicted_urls, relevant_urls, k)
-            p = self.precision_at_k(predicted_urls, relevant_urls, k)
-
-            print(f"  Recall@{k}: {r:.3f}")
-            print(f"  Precision@{k}: {p:.3f}")
-
-        # ------------------ SUMMARY ------------------
-
-        metrics = {
-            "mean_recall_at_k": self.mean_recall_at_k(results, k),
-            "mean_precision_at_k": float(
-                np.mean([
-                    self.precision_at_k(r["predicted"], r["relevant"], k)
-                    for r in results
-                ])
-            ),
-            "mean_average_precision": self.mean_average_precision(results),
-            "k": k,
-            "num_queries": len(results),
-        }
-
-        self._print_summary(metrics)
-        return metrics
 
     # ------------------ API CALL ------------------
 
@@ -135,43 +64,146 @@ class RecommendationEvaluator:
             data = response.json()
             return [rec["url"] for rec in data.get("recommendations", [])]
         except Exception as e:
-            print(f"  API error: {e}")
+            print(f"API error for query: {query[:50]} → {e}")
             return []
 
-    # ------------------ OUTPUT ------------------
+    # ------------------ CONSTRAINT EVALUATION ------------------
 
-    def _print_summary(self, metrics: Dict):
+    def evaluate_constraints(self, test_csv: str, k: int = 10):
+        print(f"Loading test data from {test_csv}...")
+
+        df = read_csv_safe(test_csv)
+        df.columns = df.columns.str.strip()
+
+        query_col = detect_query_column(df)
+
+        total_queries = len(df)
+        valid_queries = 0
+        response_times = []
+
+        print(f"Detected query column: '{query_col}'")
+        print(f"Found {total_queries} queries\n")
+
+        for idx, query in enumerate(df[query_col], 1):
+            query = str(query)
+
+            print(f"Evaluating {idx}/{total_queries} → {query[:60]}")
+
+            start = time.time()
+            predictions = self._get_predictions(query)
+            latency = time.time() - start
+            response_times.append(latency)
+
+            predictions = predictions[:k]
+            unique_predictions = set(predictions)
+
+            is_valid = (
+                5 <= len(predictions) <= 10
+                and len(predictions) == len(unique_predictions)
+            )
+
+            if is_valid:
+                valid_queries += 1
+
+            print(f"  Recommendations : {len(predictions)}")
+            print(f"  Unique URLs     : {len(unique_predictions)}")
+            print(f"  Latency (sec)   : {latency:.2f}")
+
+        # ------------------ SUMMARY ------------------
+
         print("\n" + "=" * 60)
-        print("EVALUATION SUMMARY")
+        print("CONSTRAINT EVALUATION SUMMARY")
         print("=" * 60)
-        print(f"Queries evaluated : {metrics['num_queries']}")
-        print(f"K value           : {metrics['k']}")
-        print(f"Mean Recall@K     : {metrics['mean_recall_at_k']:.4f}")
-        print(f"Mean Precision@K  : {metrics['mean_precision_at_k']:.4f}")
-        print(f"Mean AP           : {metrics['mean_average_precision']:.4f}")
+        print(f"Total Queries        : {total_queries}")
+        print(f"Valid Responses      : {valid_queries}/{total_queries}")
+        print(f"Success Rate         : {(valid_queries / total_queries) * 100:.2f}%")
+        print(f"Average Latency (s)  : {np.mean(response_times):.2f}")
+        print(f"Max Latency (s)      : {np.max(response_times):.2f}")
         print("=" * 60 + "\n")
 
+    # ------------------ PREDICTION (PHASE 7) ------------------
 
-# ------------------ MAIN ------------------
+    def generate_predictions(self, test_csv: str, output_csv: str, k: int = 10):
+        print(f"Generating predictions from {test_csv}...")
+
+        df = read_csv_safe(test_csv)
+        df.columns = df.columns.str.strip()
+
+        query_col = detect_query_column(df)
+
+        rows = []
+
+        for idx, query in enumerate(df[query_col], 1):
+            query = str(query)
+
+            print(f"Predicting {idx}/{len(df)} → {query[:60]}")
+
+            predictions = self._get_predictions(query)[:k]
+
+            for url in predictions:
+                rows.append({
+                    "query": query,
+                    "Assessment_url": url
+                })
+
+        out_df = pd.DataFrame(rows)
+        out_df.to_csv(output_csv, index=False)
+
+        print(f"✅ Predictions saved to {output_csv}")
+
+
+# ================== MAIN ==================
 
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser("Evaluate SHL Recommendation System")
-    parser.add_argument("--mode", choices=["evaluate"], required=True)
-    parser.add_argument("--train-csv", required=True)
-    parser.add_argument("--api-url", default="http://localhost:8000")
-    parser.add_argument("--k", type=int, default=10)
+    parser = argparse.ArgumentParser("SHL Recommendation System")
+
+    parser.add_argument(
+        "--mode",
+        choices=["evaluate", "predict"],
+        required=True
+    )
+
+    parser.add_argument(
+        "--test-csv",
+        required=True,
+        help="CSV file containing job queries"
+    )
+
+    parser.add_argument(
+        "--output-csv",
+        default="predictions.csv",
+        help="Output CSV file for predictions"
+    )
+
+    parser.add_argument(
+        "--api-url",
+        default="http://localhost:8000"
+    )
+
+    parser.add_argument(
+        "--k",
+        type=int,
+        default=10
+    )
 
     args = parser.parse_args()
 
     evaluator = RecommendationEvaluator(api_url=args.api_url)
-    metrics = evaluator.evaluate_from_csv(args.train_csv, args.k)
 
-    with open("evaluation_metrics.json", "w") as f:
-        json.dump(metrics, f, indent=2)
+    if args.mode == "evaluate":
+        evaluator.evaluate_constraints(
+            test_csv=args.test_csv,
+            k=args.k
+        )
 
-    print("✅ Metrics saved to evaluation_metrics.json")
+    elif args.mode == "predict":
+        evaluator.generate_predictions(
+            test_csv=args.test_csv,
+            output_csv=args.output_csv,
+            k=args.k
+        )
 
 
 if __name__ == "__main__":
