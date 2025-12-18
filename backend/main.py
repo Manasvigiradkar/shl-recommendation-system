@@ -12,6 +12,11 @@ import chromadb
 from chromadb.utils import embedding_functions
 import os
 import time
+from dotenv import load_dotenv
+
+# ------------------ Load ENV ------------------
+
+load_dotenv()
 
 # ------------------ FastAPI Init ------------------
 
@@ -31,24 +36,24 @@ app.add_middleware(
 
 # ------------------ Gemini Init ------------------
 
-GEMINI_API_KEY = os.getenv(
-    "GEMINI_API_KEY",
-    "AIzaSyDe2S1VrFIlhTN3YX9KBBDOrPtlYTpeiPo"  # replace with env variable in production
-)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError("❌ GEMINI_API_KEY not found in environment variables")
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# ------------------ ChromaDB Init (SAFE) ------------------
+# ------------------ ChromaDB Init (FINAL FIX) ------------------
 
-# Persistent DB location
-chroma_client = chromadb.PersistentClient(path="./chroma_db")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CHROMA_DB_PATH = os.path.join(BASE_DIR, "chroma_db")
 
-# Embedding function (ONLY used when creating collection)
-embedding_function = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
-    api_key=GEMINI_API_KEY
+chroma_client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+
+# ⚠️ MUST MATCH ingest_data.py
+embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="all-MiniLM-L6-v2"
 )
 
-# ⚠️ IMPORTANT: NEVER pass embedding_function to get_collection
 try:
     collection = chroma_client.get_collection(name="shl_assessments")
     print("✅ Loaded existing ChromaDB collection")
@@ -59,6 +64,8 @@ except Exception:
         metadata={"hnsw:space": "cosine"}
     )
     print("✅ Created new ChromaDB collection")
+
+print("📦 Total documents in ChromaDB:", collection.count())
 
 # ------------------ Pydantic Models ------------------
 
@@ -87,7 +94,6 @@ class HealthResponse(BaseModel):
 def enhance_query(query: str) -> str:
     """
     Gemini-based query enhancement (FAIL-SAFE).
-    If Gemini fails, original query is used.
     """
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
@@ -101,35 +107,24 @@ def enhance_query(query: str) -> str:
 
 
 def safe_rerank(candidates: List[dict]) -> List[dict]:
-    """
-    Safe reranking based purely on similarity score.
-    No LLM dependency → stable.
-    """
     return sorted(candidates, key=lambda x: x["score"], reverse=True)
 
 # ------------------ API Endpoints ------------------
 
-@app.get("/", tags=["Root"])
+@app.get("/")
 async def root():
-    return {
-        "message": "SHL Assessment Recommendation API",
-        "version": "1.0.0",
-        "endpoints": {
-            "health": "/health",
-            "recommend": "/recommend (POST)"
-        }
-    }
+    return {"message": "SHL Assessment Recommendation API is running"}
 
 
-@app.get("/health", response_model=HealthResponse, tags=["Health"])
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
     return HealthResponse(
         status="healthy",
-        message="SHL Assessment Recommendation API is running"
+        message="API is operational"
     )
 
 
-@app.post("/recommend", response_model=RecommendResponse, tags=["Recommendation"])
+@app.post("/recommend", response_model=RecommendResponse)
 async def recommend_assessments(request: QueryRequest):
     start_time = time.time()
     query = request.query.strip()
@@ -137,27 +132,22 @@ async def recommend_assessments(request: QueryRequest):
     if not query:
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
-    # Ensure DB has data
-    total_docs = collection.count()
-    if total_docs == 0:
+    if collection.count() == 0:
         raise HTTPException(
             status_code=500,
-            detail="ChromaDB is empty. Please ingest assessment data first."
+            detail="ChromaDB is empty. Please ingest data first."
         )
 
-    # Enhance query safely
     enhanced_query = enhance_query(query)
 
-    # Vector search
     results = collection.query(
         query_texts=[enhanced_query],
-        n_results=min(10, total_docs)
+        n_results=10
     )
 
-    if not results["ids"] or not results["ids"][0]:
+    if not results["ids"][0]:
         raise HTTPException(status_code=404, detail="No assessments found")
 
-    # Build candidate list
     candidates = []
     for i in range(len(results["ids"][0])):
         meta = results["metadatas"][0][i]
@@ -167,8 +157,7 @@ async def recommend_assessments(request: QueryRequest):
             "score": round(1 - results["distances"][0][i], 3)
         })
 
-    # Rerank safely
-    final_results = safe_rerank(candidates)[:10]
+    final_results = safe_rerank(candidates)
 
     recommendations = [
         AssessmentRecommendation(
